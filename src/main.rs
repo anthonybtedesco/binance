@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
-const STREAMS: [&str; 3] = ["btcusdt@ticker", "solusdt@ticker", "ethusdt@ticker"];
+const STREAMS: [&str; 0] = [];
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -80,4 +80,3 @@ async fn handle_incoming_messages(ws: Arc<Mutex<WSClient>>, tx: mpsc::Sender<Str
         }
     }
 }
-
