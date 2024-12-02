@@ -167,6 +167,7 @@ dependencies = [
  "futures-util",
  "log",
  "reqwest 0.12.9",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-binance",

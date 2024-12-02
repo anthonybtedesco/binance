@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
 
     debug!("Creating and connecting websocket ...");
 
-    let ws = WSClient::init(dotenv::var("BINANCE_WS_ENDPOINT").unwrap())
+    let mut ws = WSClient::init(dotenv::var("BINANCE_WS_ENDPOINT").unwrap())
         .await
         .expect("Valid WebSocket");
 
@@ -62,7 +62,6 @@ async fn handle_ping_pong(ws: Arc<Mutex<WSClient>>) {
 async fn handle_incoming_messages(ws: Arc<Mutex<WSClient>>, tx: mpsc::Sender<String>) {
     info!("Receiving messages ...");
     let mut ws = ws.lock().await;
-    let _ = ws.init_user_stream().await;
 
     loop {
         match ws.receive_message().await {

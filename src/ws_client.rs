@@ -3,11 +3,18 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::json;
 use std::error::Error;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+#[derive(Deserialize)]
+struct ListenKeyResponse {
+    #[serde(rename = "listenKey")]
+    listen_key: String,
+}
 
 pub struct WSClient {
     pub read: SplitStream<
@@ -32,7 +39,11 @@ impl WSClient {
         let url_str = url.to_string();
         info!("Connecting to WebSocket at {}", url_str);
 
-        let (ws_stream, _) = connect_async(format!("{url_str}/stream")).await?;
+        let (ws_stream, _) = connect_async(format!(
+            "{url_str}/stream?streams={}",
+            WSClient::get_listen_key().await?
+        ))
+        .await?;
 
         let (write, read) = ws_stream.split();
 
@@ -180,35 +191,34 @@ impl WSClient {
         Ok(())
     }
 
-    pub async fn get_listen_key() -> anyhow::Result<()> {
+    pub async fn get_listen_key() -> Result<String> {
         info!("Getting listening key ...");
+
+        // Load environment variables from .env file
         let api_key = dotenv::var("API_KEY")?;
         let api_secret = dotenv::var("SECRET_KEY")?;
         let api_url = dotenv::var("BINANCE_API_ENDPOINT")?;
-        debug!("{}", format!("{api_key} | {api_secret} | {api_url}"));
+
+        debug!("API_KEY: {}", api_key);
+        debug!("API_SECRET: {}", api_secret);
+        debug!("API_URL: {}", api_url);
 
         let client = Client::new();
 
         let url = format!("{api_url}/api/v3/userDataStream");
 
         let res = client
-            .post(url)
+            .post(&url)
             .header("X-MBX-APIKEY", api_key)
             .send()
             .await?;
 
-        debug!("Response: {:?}", res);
+        debug!("Response status: {}", res.status());
+        let body = res.text().await?;
+        debug!("Response body: {}", body);
 
-        if !res.status().is_success() {
-            return Err(anyhow::format_err!("Error Fetching ListenKey"));
-        }
+        let listen_key_response: ListenKeyResponse = serde_json::from_str(&body)?;
 
-        Ok(())
-    }
-
-    pub async fn init_user_stream(&mut self) -> Result<()> {
-        debug!("Initializing User Stream ...");
-        WSClient::get_listen_key().await?;
-        Ok(())
+        Ok(listen_key_response.listen_key)
     }
 }

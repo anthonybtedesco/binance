@@ -10,6 +10,7 @@ env_logger = "0.11.5"
 futures-util = { version = "0.3.31", features = ["sink", "futures-sink"] }
 log = "0.4.22"
 reqwest = "0.12.9"
+serde = { version = "1.0.215", features = ["serde_derive"] }
 serde_json = "1.0.133"
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-binance = "1.0.0"
