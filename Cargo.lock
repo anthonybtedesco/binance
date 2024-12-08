@@ -550,6 +550,7 @@ name = "binance"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dotenv",
  "eframe",
  "egui",
@@ -557,6 +558,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hmac 0.12.1",
+ "hmac-sha256",
  "log",
  "reqwest 0.12.9",
  "serde",
@@ -1748,6 +1750,12 @@ checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest 0.10.7",
 ]
+
+[[package]]
+name = "hmac-sha256"
+version = "1.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3688e69b38018fec1557254f64c8dc2cc8ec502890182f395dbb0aa997aa5735"
 
 [[package]]
 name = "home"

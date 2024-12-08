@@ -221,30 +221,4 @@ impl WSClient {
 
         Ok(listen_key_response.listen_key)
     }
-
-    pub async fn get_current_assets() -> Result<()> {
-        let api_key = dotenv::var("API_KEY")?;
-        let api_secret = dotenv::var("SECRET_KEY")?;
-        let api_url = dotenv::var("BINANCE_API_ENDPOINT")?;
-
-        debug!("API_KEY: {}", api_key);
-        debug!("API_SECRET: {}", api_secret);
-        debug!("API_URL: {}", api_url);
-
-        let client = Client::new();
-
-        let url = format!("{api_url}/api/v3/userDataStream");
-
-        let res = client
-            .post(&url)
-            .header("X-MBX-APIKEY", api_key)
-            .send()
-            .await?;
-
-        debug!("Response status: {}", res.status());
-        let body = res.text().await?;
-        debug!("Response body: {}", body);
-
-        Ok(())
-    }
 }
