@@ -1,30 +1,30 @@
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 
-struct Asset {
-    symbol: String,
-    amount: f64,
+pub struct Asset {
+    pub symbol: String,
+    pub amount: f64,
 }
 
 #[derive(Debug, Deserialize)]
-struct Balance {
-    asset: String,
-    free: String,
-    locked: String,
+pub struct Balance {
+    pub asset: String,
+    pub free: String,
+    pub locked: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct AccountInfo {
-    balances: Vec<Balance>,
+    pub balances: Vec<Balance>,
 }
 
 impl Asset {
-    pub async fn get_all_assets(
-        api_key: &str,
-        secret_key: &str,
-    ) -> Result<Vec<Balance>, Box<dyn std::error::Error>> {
+    pub async fn get_all_assets() -> Result<Vec<Balance>, Box<dyn std::error::Error>> {
         let url = "https://api.binance.com/api/v3/account";
         let timestamp = chrono::Utc::now().timestamp_millis();
+
+        let api_key = dotenv::var("API_KEY")?;
+        let secret_key = dotenv::var("SECRET_KEY")?;
 
         // Prepare query string with timestamp
         let query_string = format!("timestamp={}", timestamp);
@@ -38,7 +38,7 @@ impl Asset {
 
         // Set up headers
         let mut headers = HeaderMap::new();
-        headers.insert("X-MBX-APIKEY", HeaderValue::from_str(api_key)?);
+        headers.insert("X-MBX-APIKEY", HeaderValue::from_str(api_key.as_str())?);
 
         // Make the GET request
         let client = reqwest::Client::new();

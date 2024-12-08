@@ -1,10 +1,12 @@
 use anyhow::Result;
 use binance::models::PriceData;
+use binance::user_data::Asset;
 use binance::ws_client::WSClient;
 use log::{debug, info};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::spawn;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -42,8 +44,6 @@ async fn handle_incoming_messages(ws: Arc<Mutex<WSClient>>, tx: mpsc::Sender<Str
     }
 }
 
-const TRADING_PAIRS: [&str; 3] = ["solusdt", "solbtc", "btcusdt"];
-
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
@@ -59,10 +59,15 @@ async fn main() -> Result<()> {
     let ws = Arc::new(Mutex::new(ws));
     let price_data = Arc::new(Mutex::new(HashMap::new()));
 
-    // Subscribe to trading pair streams
-    for pair in TRADING_PAIRS {
-        let mut ws = ws.lock().await;
-        ws.add_stream(format!("{pair}@ticker")).await?;
+    let assets = Asset::get_all_assets().await.unwrap();
+    for asset in assets {
+        if asset.free.parse::<f64>()? > 0.0 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            info!("Asset: {:?}", asset);
+            let mut ws = ws.lock().await;
+            ws.add_stream(format!("{}usdt@ticker", asset.asset.to_lowercase()))
+                .await?
+        }
     }
 
     let (tx, mut rx) = mpsc::channel::<String>(32);
@@ -92,18 +97,16 @@ async fn main() -> Result<()> {
         if let Ok(json_message) = serde_json::from_str::<Value>(&message) {
             if let Some(stream) = json_message["stream"].as_str() {
                 let pair = stream.split('@').next().unwrap_or_default();
-                if TRADING_PAIRS.contains(&pair) {
-                    if let Some(price) = json_message["data"]["c"].as_str() {
-                        if let Ok(parsed_price) = price.parse::<f64>() {
-                            let mut price_data_lock = price_data.lock().await;
-                            price_data_lock.insert(
-                                pair.to_string(),
-                                PriceData {
-                                    current_price: parsed_price,
-                                },
-                            );
-                            debug!("Updated {} price to {}", pair, parsed_price);
-                        }
+                if let Some(price) = json_message["data"]["c"].as_str() {
+                    if let Ok(parsed_price) = price.parse::<f64>() {
+                        let mut price_data_lock = price_data.lock().await;
+                        price_data_lock.insert(
+                            pair.to_string(),
+                            PriceData {
+                                current_price: parsed_price,
+                            },
+                        );
+                        debug!("Updated {} price to {}", pair, parsed_price);
                     }
                 }
             } else {
