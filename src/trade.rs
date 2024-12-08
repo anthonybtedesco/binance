@@ -15,7 +15,6 @@ pub async fn create_order(
     time_in_force: &str,
     quantity: f64,
     price: f64,
-    recv_window: Option<u64>,
 ) -> Result<Value> {
     info!("Creating order...");
 

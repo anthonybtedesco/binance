@@ -1,7 +1,5 @@
 use anyhow::Result;
-use binance::gui::MyEguiApp;
 use binance::models::PriceData;
-use binance::trade::create_order;
 use binance::ws_client::WSClient;
 use log::{debug, info};
 use serde_json::Value;
@@ -12,11 +10,44 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
+async fn handle_ping_pong(ws: Arc<Mutex<WSClient>>) {
+    debug!("Handling ping-pong...");
+    loop {
+        let mut ws = ws.lock().await;
+        if let Err(e) = ws.handle_ping_pong().await {
+            log::error!("Ping-pong error: {}", e);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    }
+}
+
+async fn handle_incoming_messages(ws: Arc<Mutex<WSClient>>, tx: mpsc::Sender<String>) {
+    debug!("Receiving messages...");
+    let mut ws = ws.lock().await;
+    loop {
+        match ws.receive_message().await {
+            Ok(Message::Text(text)) => {
+                if let Err(e) = tx.send(text).await {
+                    log::error!("Channel send error: {}", e);
+                    break;
+                }
+            }
+            Err(e) => {
+                log::error!("Message receive error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+
 const TRADING_PAIRS: [&str; 3] = ["solusdt", "solbtc", "btcusdt"];
 
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
+    dotenv::dotenv()?;
     info!("Running ...");
 
     debug!("Creating and connecting websocket ...");
@@ -55,8 +86,6 @@ async fn main() -> Result<()> {
         }
     });
 
-    create_order("SOLUSDT", "SELL", "LIMIT", "GTC", 2.997, 238.50, Some(5000)).await?;
-
     while let Some(message) = rx.recv().await {
         debug!("Received message: {}", message);
 
@@ -84,36 +113,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-async fn handle_ping_pong(ws: Arc<Mutex<WSClient>>) {
-    debug!("Handling ping-pong...");
-    loop {
-        let mut ws = ws.lock().await;
-        if let Err(e) = ws.handle_ping_pong().await {
-            log::error!("Ping-pong error: {}", e);
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    }
-}
-
-async fn handle_incoming_messages(ws: Arc<Mutex<WSClient>>, tx: mpsc::Sender<String>) {
-    debug!("Receiving messages...");
-    let mut ws = ws.lock().await;
-    loop {
-        match ws.receive_message().await {
-            Ok(Message::Text(text)) => {
-                if let Err(e) = tx.send(text).await {
-                    log::error!("Channel send error: {}", e);
-                    break;
-                }
-            }
-            Err(e) => {
-                log::error!("Message receive error: {}", e);
-                break;
-            }
-            _ => {}
-        }
-    }
 }
