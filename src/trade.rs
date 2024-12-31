@@ -56,32 +56,24 @@ pub enum OrderState {
 pub type OrderTracker = Arc<std::sync::Mutex<HashMap<u64, OrderStatus>>>;
 
 impl TradeOrder {
-    fn optimize_order(&mut self, symbol_info: &SymbolInfo, current_price: f64) -> Result<(), Box<dyn Error>> {
-        info!("Optimizing order");
-        
-        // Round quantity to step size precision
-        if symbol_info.step_size > 0.0 {
-            let precision = symbol_info.quantity_precision;
-            let multiplier = 10.0f64.powi(precision as i32);
-            self.quantity = ((self.quantity / symbol_info.step_size).floor() * symbol_info.step_size * multiplier).round() / multiplier;
+    pub fn optimize_order(&mut self, symbol_info: &SymbolInfo) -> Result<(), Box<dyn Error>> {
+        // Helper function to round to step size
+        fn round_to_step(value: f64, step_size: f64) -> f64 {
+            (value / step_size).floor() * step_size
         }
+
+        // Round quantity to step size
+        self.quantity = round_to_step(self.quantity, symbol_info.step_size);
         
         // Ensure quantity is within bounds
         self.quantity = self.quantity.max(symbol_info.min_qty).min(symbol_info.max_qty);
         
-        // For limit orders, adjust price
+        // For limit orders, round price to tick size
         if let Some(price) = self.price.as_mut() {
-            // Round price to tick size precision
-            if symbol_info.tick_size > 0.0 {
-                let precision = symbol_info.price_precision;
-                let multiplier = 10.0f64.powi(precision as i32);
-                *price = ((*price / symbol_info.tick_size).round() * symbol_info.tick_size * multiplier).round() / multiplier;
-            }
-            
-            // Ensure price is within bounds
-            *price = price.max(symbol_info.min_price).min(symbol_info.max_price);
+            *price = round_to_step(*price, symbol_info.tick_size);
         }
 
+        info!("Optimized order: qty={}, price={:?}", self.quantity, self.price);
         Ok(())
     }
 
@@ -159,7 +151,7 @@ impl TradeOrder {
             }
 
             // Optimize the order with proper filter values
-            self.optimize_order(&symbol_info, current_price)?;
+            self.optimize_order(&symbol_info)?;
         }
 
         info!("Submitting optimized order for {}", self.symbol);
