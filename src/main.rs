@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use binance::trade::TradeOrder;
 use binance::trailing::TrailingOrder;
+use binance::trailing_monitor;
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
@@ -35,8 +36,8 @@ async fn main() -> Result<(), eframe::Error> {
         }
     });
 
-    // Start trailing order monitor
-    TrailingOrder::start_monitor(
+    // Start price monitor for trailing orders
+    trailing_monitor::start_price_monitor(
         trailing_orders.clone(),
         price_data.clone(),
         order_tracker.clone(),

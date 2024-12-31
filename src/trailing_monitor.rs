@@ -6,6 +6,56 @@ use tokio::sync::Mutex as TokioMutex;
 use std::sync::Arc;
 use log::{error, info};
 
+pub fn start_price_monitor(
+    trailing_orders: TrailingOrderMap,
+    prices: Arc<TokioMutex<HashMap<String, PriceData>>>,
+    order_tracker: OrderTracker,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        
+        loop {
+            interval.tick().await;
+            
+            // Get current prices and trails
+            let prices_guard = prices.lock().await;
+            let mut trails_guard = trailing_orders.lock().await;
+            let mut triggered = Vec::new();
+            
+            // Update each trail
+            for (id, trail) in trails_guard.iter_mut() {
+                if let Some(price_data) = prices_guard.get(&trail.symbol) {
+                    if trail.update_price(price_data.price) {
+                        info!("🎯 Trail {} triggered at price {}", id, price_data.price);
+                        triggered.push((id.clone(), trail.clone()));
+                    }
+                }
+            }
+            
+            drop(prices_guard);
+            
+            // Process triggered orders
+            for (id, trail) in triggered {
+                let mut order = trail.to_trade_order();
+                match order.submit(order_tracker.clone()).await {
+                    Ok(_) => {
+                        info!("✅ Trail {} executed successfully", id);
+                        trails_guard.remove(&id);
+                    },
+                    Err(e) => error!("❌ Failed to execute trail {}: {}", id, e),
+                }
+            }
+            
+            // Save updated trails
+            if let Err(e) = TrailingOrder::save_trails(&trails_guard) {
+                error!("Failed to save trails: {}", e);
+            }
+            
+            drop(trails_guard);
+        }
+    });
+}
+
 pub struct TrailingMonitor {
     trailing_orders: TrailingOrderMap,
     prices: Arc<TokioMutex<HashMap<String, PriceData>>>,
