@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TradeOrder {
     pub symbol: String,
     pub side: OrderSide,
@@ -22,10 +22,22 @@ pub enum OrderSide {
     SELL,
 }
 
+impl Default for OrderSide {
+    fn default() -> Self {
+        OrderSide::BUY
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OrderType {
     LIMIT,
     MARKET,
+}
+
+impl Default for OrderType {
+    fn default() -> Self {
+        OrderType::LIMIT
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

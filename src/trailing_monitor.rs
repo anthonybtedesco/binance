@@ -47,7 +47,23 @@ impl TrailingMonitor {
         // Update trails and collect triggers
         for (id, trail) in trails.iter_mut() {
             if let Some(price_data) = prices.get(&trail.symbol) {
+                let old_price = trail.last_price;
                 trail.update_price(price_data.price);
+                
+                // Log price updates
+                info!("Trail {}: {} price update {} -> {} (trigger: {:.8}, delta: {:.2}%)", 
+                    id,
+                    trail.symbol,
+                    old_price,
+                    trail.last_price,
+                    trail.trigger_price,
+                    trail.delta_percentage
+                );
+
+                // Log if getting close to trigger
+                if (trail.last_price - trail.trigger_price).abs() / trail.trigger_price < 0.01 {
+                    info!("⚠️ Trail {} is within 1% of trigger price!", id);
+                }
             }
         }
 
@@ -58,10 +74,10 @@ impl TrailingMonitor {
     }
 
     fn log_status(&self, trails: &HashMap<String, TrailingOrder>) {
-        info!("Active trailing orders status:");
+        info!("📊 Active trailing orders status:");
         for (id, trail) in trails.iter() {
             info!(
-                "Trail {}: {:?} {} @ {:.8} (trigger: {:.8}, delta: {:.2}%, value: ${:.2})",
+                "🔄 Trail {}: {:?} {} @ {:.8} (trigger: {:.8}, delta: {:.2}%, value: ${:.2})",
                 id, trail.side, trail.symbol, trail.last_price, trail.trigger_price,
                 trail.delta_percentage, trail.usdt_value
             );

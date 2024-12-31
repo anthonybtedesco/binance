@@ -6,6 +6,7 @@ use binance::ws_client::WsClient;
 use std::sync::Arc;
 use std::sync::Mutex;
 use binance::trade::TradeOrder;
+use binance::trailing::TrailingOrder;
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
@@ -22,6 +23,10 @@ async fn main() -> Result<(), eframe::Error> {
     // Create WS client with the loaded orders
     let ws_client = Arc::new(Mutex::new(WsClient::new(order_tracker.clone())));
 
+    // Get price data and trailing orders from WS client
+    let price_data = ws_client.lock().unwrap().get_prices_arc();
+    let trailing_orders = ws_client.lock().unwrap().get_trailing_orders();
+
     // Spawn WebSocket handling task
     tokio::spawn(async move {
         loop {
@@ -29,6 +34,13 @@ async fn main() -> Result<(), eframe::Error> {
             // WebSocket keeps running in background
         }
     });
+
+    // Start trailing order monitor
+    TrailingOrder::start_monitor(
+        trailing_orders.clone(),
+        price_data.clone(),
+        order_tracker.clone(),
+    );
 
     // Run GUI with WebSocket client
     eframe::run_native(

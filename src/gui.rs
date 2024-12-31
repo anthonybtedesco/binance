@@ -27,7 +27,14 @@ pub struct BinanceApp {
 impl BinanceApp {
     pub fn new(ws_client: Arc<Mutex<WsClient>>) -> Self {
         let order_tracker = TradeOrder::new_tracker();
-        let trailing_orders = Arc::new(TokioMutex::new(HashMap::new()));
+        
+        // Get trailing orders from WsClient instead of creating new
+        let trailing_orders = if let Ok(client) = ws_client.lock() {
+            client.get_trailing_orders()
+        } else {
+            Arc::new(TokioMutex::new(HashMap::new()))
+        };
+
         let mut app = Self {
             api_key: env::var("API_KEY").unwrap_or_default(),
             secret_key: env::var("SECRET_KEY").unwrap_or_default(),
@@ -38,13 +45,7 @@ impl BinanceApp {
             filtered_symbols: Vec::new(),
             last_refresh: std::time::Instant::now(),
             selected_symbols: Vec::new(),
-            trade_order: TradeOrder {
-                symbol: String::new(),
-                side: OrderSide::BUY,
-                order_type: OrderType::LIMIT,
-                quantity: 0.0,
-                price: None,
-            },
+            trade_order: TradeOrder::default(),
             order_tracker: order_tracker.clone(),
             trailing_orders,
         };
@@ -588,28 +589,29 @@ impl BinanceApp {
             .min_scrolled_height(500.0)
             .show(ui, |ui| {
                 tokio::task::block_in_place(|| {
-                    if let Ok(trails) = self.trailing_orders.try_lock() {
+                    let trails = futures::executor::block_on(self.trailing_orders.lock());
+                    if trails.is_empty() {
+                        ui.label("No active trailing orders");
+                    } else {
                         for (id, trail) in trails.iter() {
                             ui.horizontal(|ui| {
-                                ui.label(format!("{}: ", trail.symbol));
                                 let side_color = match trail.side {
                                     OrderSide::BUY => egui::Color32::GREEN,
                                     OrderSide::SELL => egui::Color32::RED,
                                 };
                                 ui.colored_label(side_color, format!("{:?}", trail.side));
+                                ui.label(format!("{}: ", trail.symbol));
                                 ui.label(format!("Qty: {:.8}", trail.quantity));
                                 ui.label(format!("Delta: {:.2}%", trail.delta_percentage));
-                                ui.label(format!("Initial: {:.8}", trail.initial_price));
                                 ui.label(format!("Current: {:.8}", trail.last_price));
                                 ui.label(format!("Trigger: {:.8}", trail.trigger_price));
                                 ui.label(format!("Value: ${:.2}", trail.usdt_value));
                                 
                                 if ui.button("Cancel").clicked() {
-                                    if let Ok(mut trails) = self.trailing_orders.try_lock() {
-                                        trails.remove(id);
-                                        if let Err(e) = TrailingOrder::save_trails(&trails) {
-                                            error!("Failed to save trails after removal: {}", e);
-                                        }
+                                    let mut trails = futures::executor::block_on(self.trailing_orders.lock());
+                                    trails.remove(id);
+                                    if let Err(e) = TrailingOrder::save_trails(&trails) {
+                                        error!("Failed to save trails after removal: {}", e);
                                     }
                                 }
                             });

@@ -4,7 +4,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use log::{error, info};
-use crate::trade::{OrderSide, OrderType, TradeOrder};
+use crate::trade::{OrderSide, OrderTracker, OrderType, TradeOrder};
+use crate::ws_client::PriceData;
 use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,5 +102,62 @@ impl TrailingOrder {
         });
         info!("Loaded {} trailing orders", trails.len());
         Arc::new(TokioMutex::new(trails))
+    }
+
+    pub fn start_monitor(
+        trailing_orders: TrailingOrderMap,
+        prices: Arc<TokioMutex<HashMap<String, PriceData>>>,
+        order_tracker: OrderTracker,
+    ) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+            
+            loop {
+                interval.tick().await;
+                
+                // Get current prices and trails
+                let prices_guard = prices.lock().await;
+                let mut trails_guard = trailing_orders.lock().await;
+                
+                let mut triggered_orders = Vec::new();
+                
+                // Update each trail
+                for (id, trail) in trails_guard.iter_mut() {
+                    if let Some(price_data) = prices_guard.get(&format!("{}usdt", trail.symbol.to_lowercase())) {
+                        let triggered = trail.update_price(price_data.price);
+                        
+                        info!("Trail {} - {}: Price: {:.8} Trigger: {:.8} Delta: {:.2}%", 
+                            id, trail.symbol, price_data.price, trail.trigger_price, trail.delta_percentage);
+                        
+                        if triggered {
+                            info!("🎯 Trail {} triggered! Creating {:?} order for {}", 
+                                id, trail.side, trail.symbol);
+                            triggered_orders.push((id.clone(), trail.clone()));
+                        }
+                    }
+                }
+                
+                drop(prices_guard);
+                
+                // Execute triggered orders
+                for (id, trail) in triggered_orders {
+                    let mut order = trail.to_trade_order();
+                    match futures::executor::block_on(order.submit(order_tracker.clone())) {
+                        Ok(_) => {
+                            info!("✅ Successfully executed trail {} for {}", id, trail.symbol);
+                            trails_guard.remove(&id);
+                        },
+                        Err(e) => error!("❌ Failed to execute trail {}: {}", id, e),
+                    }
+                }
+                
+                // Save updated trails
+                if let Err(e) = TrailingOrder::save_trails(&trails_guard) {
+                    error!("Failed to save trails: {}", e);
+                }
+                
+                drop(trails_guard);
+            }
+        });
     }
 } 

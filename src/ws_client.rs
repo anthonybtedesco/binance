@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use tokio::sync::Mutex as TokioMutex;
 use log::{debug, info, error};
 use std::sync::Mutex;
-use crate::{functions::hmac_sha256, trade::{OrderSide, OrderState, OrderStatus, OrderTracker, TradeOrder}};
+use crate::{functions::hmac_sha256, trade::{OrderSide, OrderState, OrderStatus, OrderTracker, TradeOrder}, trailing::{TrailingOrder, TrailingOrderMap}};
 
 pub struct WsClient {
     status: Arc<std::sync::Mutex<String>>,
@@ -18,6 +18,7 @@ pub struct WsClient {
     prices: Arc<TokioMutex<HashMap<String, PriceData>>>,
     exchange_info: Arc<Mutex<ExchangeInfo>>,
     order_tracker: OrderTracker,
+    trailing_orders: TrailingOrderMap,
 }
 
 #[derive(Clone, Debug)]
@@ -98,6 +99,11 @@ impl WsClient {
         let prices = Arc::new(TokioMutex::new(HashMap::new()));
         let exchange_info = Arc::new(Mutex::new(ExchangeInfo { symbols: HashMap::new() }));
         
+        // Load existing trailing orders from trails.json
+        let trailing_orders = TrailingOrder::new_tracker();
+        info!("Loaded {} trailing orders from trails.json", 
+            futures::executor::block_on(trailing_orders.lock()).len());
+        
         Self::spawn_background_task(rx, status.clone(), balances.clone(), prices.clone(), exchange_info.clone(), order_tracker.clone());
 
         Self {
@@ -107,6 +113,7 @@ impl WsClient {
             prices,
             exchange_info,
             order_tracker,
+            trailing_orders,
         }
     }
 
@@ -607,5 +614,13 @@ impl WsClient {
     pub fn set_order_tracker(&mut self, order_tracker: OrderTracker) {
         // Store order_tracker in WsClient struct
         self.order_tracker = order_tracker;
+    }
+
+    pub fn get_prices_arc(&self) -> Arc<TokioMutex<HashMap<String, PriceData>>> {
+        self.prices.clone()
+    }
+
+    pub fn get_trailing_orders(&self) -> TrailingOrderMap {
+        self.trailing_orders.clone()
     }
 }
