@@ -22,3 +22,8 @@ sha2 = "0.10.8"
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-binance = "1.0.0"
 tokio-tungstenite = { version = "0.24.0", features = ["native-tls"] }
+ratatui = "0.24.0"
+crossterm = "0.27.0"
+shared_memory = "0.12.4"
+lazy_static = "1.5.0"
+futures = "0.3"
