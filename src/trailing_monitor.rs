@@ -10,9 +10,10 @@ pub fn start_price_monitor(
     trailing_orders: TrailingOrderMap,
     prices: Arc<TokioMutex<HashMap<String, PriceData>>>,
     order_tracker: OrderTracker,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut last_log = std::time::Instant::now();
         
         loop {
             interval.tick().await;
@@ -21,6 +22,19 @@ pub fn start_price_monitor(
             let prices_guard = prices.lock().await;
             let mut trails_guard = trailing_orders.lock().await;
             let mut triggered = Vec::new();
+            
+            // Log status every 30 seconds
+            if last_log.elapsed() >= std::time::Duration::from_secs(30) {
+                info!("📊 Active trailing orders status:");
+                for (id, trail) in trails_guard.iter() {
+                    info!(
+                        "🔄 Trail {}: {:?} {} @ {:.8} (trigger: {:.8}, delta: {:.2}%, value: ${:.2})",
+                        id, trail.side, trail.symbol, trail.last_price, trail.trigger_price,
+                        trail.delta_percentage, trail.usdt_value
+                    );
+                }
+                last_log = std::time::Instant::now();
+            }
             
             // Update each trail
             for (id, trail) in trails_guard.iter_mut() {
@@ -53,7 +67,7 @@ pub fn start_price_monitor(
             
             drop(trails_guard);
         }
-    });
+    })
 }
 
 pub struct TrailingMonitor {

@@ -1,15 +1,15 @@
 {
-  "BTCUSDT_1735678162": {
-    "symbol": "BTCUSDT",
+  "SOLUSDT_1735682668": {
+    "symbol": "SOLUSDT",
     "side": "BUY",
-    "quantity": 0.00001,
+    "quantity": 3.323,
     "delta_percentage": 1.0,
-    "initial_price": 93770.39,
-    "last_price": 93876.0,
-    "highest_price": 93770.39,
-    "lowest_price": 93519.43,
-    "trigger_price": 94454.6243,
-    "usdt_value": 0.93876,
-    "created_at": "2024-12-31T20:49:22.718332545Z"
+    "initial_price": 192.89,
+    "last_price": 192.53,
+    "highest_price": 192.89,
+    "lowest_price": 192.17,
+    "trigger_price": 194.0917,
+    "usdt_value": 639.77719,
+    "created_at": "2024-12-31T22:04:28.889699760Z"
   }
 }

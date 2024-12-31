@@ -557,12 +557,16 @@ impl BinanceApp {
                                                     )));
                                                     if ui.button("Cancel").clicked() {
                                                         info!("Cancelling trailing order: {}", id);
-                                                        if let Ok(mut trails) = self.trailing_orders.try_lock() {
-                                                            trails.remove(id);
-                                                            if let Err(e) = TrailingOrder::save_trails(&trails) {
-                                                                error!("Failed to save trails after removal: {}", e);
+                                                        tokio::task::block_in_place(|| {
+                                                            if let Ok(mut trails) = self.trailing_orders.try_lock() {
+                                                                trails.remove(id);
+                                                                if let Err(e) = TrailingOrder::save_trails(&trails) {
+                                                                    error!("Failed to save trails after removal: {}", e);
+                                                                }
+                                                            } else {
+                                                                error!("Failed to acquire trailing orders lock");
                                                             }
-                                                        }
+                                                        });
                                                     }
                                                     ui.end_row();
                                                 }
@@ -589,11 +593,17 @@ impl BinanceApp {
             .min_scrolled_height(500.0)
             .show(ui, |ui| {
                 tokio::task::block_in_place(|| {
-                    let trails = futures::executor::block_on(self.trailing_orders.lock());
-                    if trails.is_empty() {
+                    let mut trails = futures::executor::block_on(self.trailing_orders.lock());
+                    
+                    // Collect and clone the data we need
+                    let trails_data: Vec<(String, TrailingOrder)> = trails.iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    
+                    if trails_data.is_empty() {
                         ui.label("No active trailing orders");
                     } else {
-                        for (id, trail) in trails.iter() {
+                        for (id, trail) in trails_data {
                             ui.horizontal(|ui| {
                                 let side_color = match trail.side {
                                     OrderSide::BUY => egui::Color32::GREEN,
@@ -603,15 +613,18 @@ impl BinanceApp {
                                 ui.label(format!("{}: ", trail.symbol));
                                 ui.label(format!("Qty: {:.8}", trail.quantity));
                                 ui.label(format!("Delta: {:.2}%", trail.delta_percentage));
+                                ui.label(format!("Lowest/Highest: {:.8} / {:.8}", trail.lowest_price, trail.highest_price));
                                 ui.label(format!("Current: {:.8}", trail.last_price));
                                 ui.label(format!("Trigger: {:.8}", trail.trigger_price));
-                                ui.label(format!("Value: ${:.2}", trail.usdt_value));
+                                ui.label(format!("Value: ${:.2}", trail.trigger_price * trail.quantity));
                                 
                                 if ui.button("Cancel").clicked() {
-                                    let mut trails = futures::executor::block_on(self.trailing_orders.lock());
-                                    trails.remove(id);
+                                    info!("Cancelling trailing order: {}", id);
+                                    trails.remove(&id);
                                     if let Err(e) = TrailingOrder::save_trails(&trails) {
                                         error!("Failed to save trails after removal: {}", e);
+                                    } else {
+                                        info!("✅ Successfully removed trail {} and saved to file", id);
                                     }
                                 }
                             });

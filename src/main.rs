@@ -37,11 +37,18 @@ async fn main() -> Result<(), eframe::Error> {
     });
 
     // Start price monitor for trailing orders
-    trailing_monitor::start_price_monitor(
+    let monitor_handle = trailing_monitor::start_price_monitor(
         trailing_orders.clone(),
         price_data.clone(),
         order_tracker.clone(),
     );
+
+    // Optional: Cancel the monitor when the app exits
+    tokio::spawn(async move {
+        if let Err(e) = monitor_handle.await {
+            log::error!("Trail monitor error: {}", e);
+        }
+    });
 
     // Run GUI with WebSocket client
     eframe::run_native(
