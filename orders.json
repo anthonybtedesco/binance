@@ -1,1 +1,162 @@
-{}
+{
+  "2498663729": {
+    "order_id": 2498663729,
+    "symbol": "SOLBTC",
+    "status": "Filled",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.14,
+    "filled": 0.14,
+    "last_executed_price": 0.0020697,
+    "quote_qty": 0.00028975,
+    "commission": [
+      "BTC",
+      2.9e-7
+    ],
+    "last_update": "2024-12-31T19:13:07.353Z"
+  },
+  "34572754271": {
+    "order_id": 34572754271,
+    "symbol": "BTCUSDT",
+    "status": "Filled",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.00168,
+    "filled": 0.00168,
+    "last_executed_price": 93976.49,
+    "quote_qty": 157.8805032,
+    "commission": [
+      "USDT",
+      0.1578805
+    ],
+    "last_update": "2024-12-31T19:23:23.759Z"
+  },
+  "525867965": {
+    "order_id": 525867965,
+    "symbol": "CTXCUSDT",
+    "status": "Filled",
+    "side": "BUY",
+    "price": 0.0,
+    "quantity": 81.0,
+    "filled": 81.0,
+    "last_executed_price": 0.2495,
+    "quote_qty": 20.2095,
+    "commission": [
+      "CTXC",
+      0.081
+    ],
+    "last_update": "2024-12-31T19:12:26.544Z"
+  },
+  "2498643318": {
+    "order_id": 2498643318,
+    "symbol": "SOLBTC",
+    "status": "Filled",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.19,
+    "filled": 0.19,
+    "last_executed_price": 0.0020735,
+    "quote_qty": 0.00039396,
+    "commission": [
+      "BTC",
+      3.9e-7
+    ],
+    "last_update": "2024-12-31T18:59:12.942Z"
+  },
+  "9213420224": {
+    "order_id": 9213420224,
+    "symbol": "SOLUSDT",
+    "status": "Filled",
+    "side": "BUY",
+    "price": 194.85,
+    "quantity": 0.19,
+    "filled": 0.19,
+    "last_executed_price": 194.67,
+    "quote_qty": 36.9873,
+    "commission": [
+      "SOL",
+      0.00019
+    ],
+    "last_update": "2024-12-31T18:58:59.612Z"
+  },
+  "9213799622": {
+    "order_id": 9213799622,
+    "symbol": "SOLUSDT",
+    "status": "Filled",
+    "side": "BUY",
+    "price": 0.0,
+    "quantity": 0.373,
+    "filled": 0.373,
+    "last_executed_price": 193.32,
+    "quote_qty": 72.10836,
+    "commission": [
+      "SOL",
+      0.000373
+    ],
+    "last_update": "2024-12-31T19:43:12.391Z"
+  },
+  "2498705611": {
+    "order_id": 2498705611,
+    "symbol": "SOLBTC",
+    "status": "Filled",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.376,
+    "filled": 0.376,
+    "last_executed_price": 0.0020622,
+    "quote_qty": 0.00077538,
+    "commission": [
+      "BTC",
+      7.8e-7
+    ],
+    "last_update": "2024-12-31T19:43:27.874Z"
+  },
+  "9213553146": {
+    "order_id": 9213553146,
+    "symbol": "SOLUSDT",
+    "status": "Filled",
+    "side": "BUY",
+    "price": 0.0,
+    "quantity": 0.14,
+    "filled": 0.14,
+    "last_executed_price": 195.01,
+    "quote_qty": 27.3014,
+    "commission": [
+      "SOL",
+      0.00014
+    ],
+    "last_update": "2024-12-31T19:12:18.149Z"
+  },
+  "34572658470": {
+    "order_id": 34572658470,
+    "symbol": "BTCUSDT",
+    "status": "Filled",
+    "side": "BUY",
+    "price": 94129.69,
+    "quantity": 0.001,
+    "filled": 0.001,
+    "last_executed_price": 94035.65,
+    "quote_qty": 94.03565,
+    "commission": [
+      "BTC",
+      1e-6
+    ],
+    "last_update": "2024-12-31T19:19:59.047Z"
+  },
+  "525868044": {
+    "order_id": 525868044,
+    "symbol": "CTXCUSDT",
+    "status": "Filled",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 81.0,
+    "filled": 81.0,
+    "last_executed_price": 0.2493,
+    "quote_qty": 20.1933,
+    "commission": [
+      "USDT",
+      0.0201933
+    ],
+    "last_update": "2024-12-31T19:12:38.322Z"
+  }
+}

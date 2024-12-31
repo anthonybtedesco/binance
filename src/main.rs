@@ -10,11 +10,17 @@ use binance::trade::TradeOrder;
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
     env_logger::init();
-    dotenv().ok();
+    dotenv::dotenv().ok();
 
+    let options = eframe::NativeOptions {
+        ..Default::default()
+    };
+
+    // Load past orders
     let order_tracker = TradeOrder::new_tracker();
-    let ws_client = Arc::new(Mutex::new(WsClient::new(order_tracker)));
-    let ws_client_gui = ws_client.clone();
+
+    // Create WS client with the loaded orders
+    let ws_client = Arc::new(Mutex::new(WsClient::new(order_tracker.clone())));
 
     // Spawn WebSocket handling task
     tokio::spawn(async move {
@@ -26,8 +32,8 @@ async fn main() -> Result<(), eframe::Error> {
 
     // Run GUI with WebSocket client
     eframe::run_native(
-        "Binance Trading Interface",
-        eframe::NativeOptions::default(),
-        Box::new(move |_cc| Ok(Box::new(BinanceApp::new(ws_client_gui)))),
+        "Binance Trading Bot",
+        options,
+        Box::new(|_cc| Ok(Box::new(BinanceApp::new(ws_client)))),
     )
 }

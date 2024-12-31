@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use tokio::sync::Mutex as TokioMutex;
 use log::{debug, info, error};
 use std::sync::Mutex;
-use crate::{functions::hmac_sha256, trade::{OrderState, OrderTracker}};
+use crate::{functions::hmac_sha256, trade::{OrderSide, OrderState, OrderStatus, OrderTracker, TradeOrder}};
 
 pub struct WsClient {
     status: Arc<std::sync::Mutex<String>>,
@@ -45,18 +45,21 @@ impl AssetBalance {
             debug!("Asset Price: {:?}", prices.get(&format!("{}USDT", asset)));
             if let Some(price) = prices.get(&format!("{}USDT", asset)) {
                 self.total_in_usdt = total * price.price;
+                println!("{}: Total in USDT: {}", asset, self.total_in_usdt);
             }
             if let Some(price) = prices.get(&format!("{}BTC", asset)) {
                 self.total_in_btc = total * price.price;
+                println!("{}: Total in BTC: {}", asset, self.total_in_btc);
             }
             if let Some(price) = prices.get(&format!("{}USDC", asset)) {
                 self.total_in_usdc = total * price.price;
+                println!("{}: Total in USDC: {}", asset, self.total_in_usdc);
             }
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PriceData {
     pub price: f64,
     pub high_24h: f64,
@@ -82,6 +85,8 @@ pub struct SymbolInfo {
     pub min_qty: f64,
     pub max_qty: f64,
     pub step_size: f64,
+    pub quantity_precision: usize,
+    pub price_precision: usize,
 }
 
 impl WsClient {
@@ -267,23 +272,80 @@ impl WsClient {
         
         match json["e"].as_str() {
             Some("executionReport") => {
-                // Handle order update
+                info!("Received execution report: {}", txt);
                 if let Some(order_id) = json["i"].as_u64() {
-                    let mut orders = order_tracker.lock().await;
-                    if let Some(order) = orders.get_mut(&order_id) {
-                        order.status = match json["X"].as_str() {
-                            Some("FILLED") => OrderState::Filled,
-                            Some("PARTIALLY_FILLED") => OrderState::PartiallyFilled,
-                            Some("CANCELED") => OrderState::Canceled,
-                            Some("REJECTED") => OrderState::Rejected,
-                            Some("EXPIRED") => OrderState::Expired,
-                            _ => order.status.clone(),
-                        };
-                        order.filled = json["z"].as_str()
-                            .and_then(|s| s.parse::<f64>().ok())
-                            .unwrap_or(order.filled);
-                        order.last_update = chrono::Utc::now();
+                    let mut orders = order_tracker.lock().unwrap();
+                    let mut order = orders.get(&order_id)
+                        .cloned()
+                        .unwrap_or_else(|| OrderStatus {
+                            order_id,
+                            symbol: json["s"].as_str().unwrap_or("").to_string(),
+                            status: OrderState::New,
+                            side: if json["S"].as_str() == Some("BUY") { OrderSide::BUY } else { OrderSide::SELL },
+                            price: json["p"].as_str().and_then(|p| p.parse().ok()).unwrap_or(0.0),
+                            quantity: json["q"].as_str().and_then(|q| q.parse().ok()).unwrap_or(0.0),
+                            filled: 0.0,
+                            last_executed_price: None,
+                            quote_qty: None,
+                            commission: None,
+                            last_update: chrono::Utc::now(),
+                        });
+
+                    // Update execution status (X is the current status)
+                    order.status = match json["X"].as_str() {
+                        Some("NEW") => OrderState::New,
+                        Some("FILLED") => OrderState::Filled,
+                        Some("PARTIALLY_FILLED") => OrderState::PartiallyFilled,
+                        Some("CANCELED") => OrderState::Canceled,
+                        Some("REJECTED") => OrderState::Rejected,
+                        Some("EXPIRED") => OrderState::Expired,
+                        Some(status) => {
+                            info!("Unknown order status: {}", status);
+                            order.status.clone()
+                        }
+                        None => order.status.clone(),
+                    };
+
+                    // Update cumulative filled quantity (z)
+                    if let Some(filled_qty) = json["z"].as_str() {
+                        if let Ok(qty) = filled_qty.parse::<f64>() {
+                            order.filled = qty;
+                        }
                     }
+
+                    // Update last executed price (L)
+                    if let Some(exec_price) = json["L"].as_str() {
+                        if let Ok(price) = exec_price.parse::<f64>() {
+                            order.last_executed_price = Some(price);
+                        }
+                    }
+
+                    // Update cumulative quote asset transacted quantity (Z)
+                    if let Some(quote_qty) = json["Z"].as_str() {
+                        if let Ok(qty) = quote_qty.parse::<f64>() {
+                            order.quote_qty = Some(qty);
+                        }
+                    }
+
+                    // Update commission asset (N) and amount (n)
+                    if let (Some(commission_asset), Some(commission_amt)) = (json["N"].as_str(), json["n"].as_str()) {
+                        if let Ok(amt) = commission_amt.parse::<f64>() {
+                            order.commission = Some((commission_asset.to_string(), amt));
+                        }
+                    }
+
+                    // Update timestamp (T)
+                    if let Some(timestamp) = json["T"].as_i64() {
+                        order.last_update = chrono::DateTime::from_timestamp(
+                            timestamp / 1000,
+                            ((timestamp % 1000) * 1_000_000) as u32,
+                        ).unwrap_or(chrono::Utc::now());
+                    }
+
+                    info!("Updated order status: {:?}", order);
+
+                    // Insert the updated order
+                    orders.insert(order_id, order);
                 }
             }
             Some("outboundAccountPosition") => {
@@ -296,6 +358,14 @@ impl WsClient {
         }
         
         *status.lock().unwrap() = "Receiving messages".to_string();
+
+        // Save orders after update
+        if let Ok(orders) = order_tracker.lock() {
+            if let Err(e) = TradeOrder::save_orders(&orders) {
+                error!("Failed to save orders: {}", e);
+            }
+        }
+
         Ok(())
     }
 
@@ -305,7 +375,7 @@ impl WsClient {
         prices: &Arc<TokioMutex<HashMap<String, PriceData>>>,
     ) {
         let mut balance_map = balances.lock().await;
-        debug!("Processing {} balances", balances_arr.len());
+        let prices_map = prices.lock().await;
         
         for balance in balances_arr {
             if let (Some(asset), Some(free), Some(locked)) = (
@@ -315,30 +385,51 @@ impl WsClient {
             ) {
                 if let (Ok(free), Ok(locked)) = (free.parse::<f64>(), locked.parse::<f64>()) {
                     if free > 0.0 || locked > 0.0 {
-                        debug!("Updated balance for {}: Free={}, Locked={}", asset, free, locked);
-                        
+                        let total = free + locked;
+                        let mut total_in_usdt = 0.0;
+                        let mut total_in_btc = 0.0;
+                        let mut total_in_usdc = 0.0;
+
+                        // Direct values for base currencies
+                        match asset {
+                            "USDT" => total_in_usdt = total,
+                            "BTC" => total_in_btc = total,
+                            "USDC" => total_in_usdc = total,
+                            _ => {
+                                // Calculate using current prices
+                                if let Some(price) = prices_map.get(&format!("{}USDT", asset)) {
+                                    total_in_usdt = total * price.price;
+                                }
+                                if let Some(price) = prices_map.get(&format!("{}BTC", asset)) {
+                                    total_in_btc = total * price.price;
+                                }
+                                else {
+                                    if let Some(usdt_price) = prices_map.get(&format!("{}USDT", asset)) {
+                                        if let Some(btc_usdt_price) = prices_map.get("BTCUSDT") {
+                                            total_in_btc = total * usdt_price.price / btc_usdt_price.price;
+                                        }
+                                    }
+                                }
+                                if let Some(price) = prices_map.get(&format!("{}USDC", asset)) {
+                                    total_in_usdc = total * price.price;
+                                }
+                            }
+                        }
+
                         balance_map.insert(
                             asset.to_string(),
                             AssetBalance { 
                                 free, 
                                 locked,
-                                total_in_usdt: 0.0,
-                                total_in_btc: 0.0,
-                                total_in_usdc: 0.0,
+                                total_in_usdt,
+                                total_in_btc,
+                                total_in_usdc,
                             },
                         );
-
-                        let prices = prices.lock().await;
-                        balance_map.values_mut().for_each(|balance| {
-                            balance.update_valuations(&prices, asset);
-                        });
-                        debug!("Balances: {:?}", balance_map);
                     }
                 }
             }
         }
-        
-        info!("Loaded {} non-zero balances", balance_map.len());
     }
 
     pub fn get_status(&self) -> String {
@@ -398,6 +489,8 @@ impl WsClient {
                             min_qty: 0.0,
                             max_qty: 0.0,
                             step_size: 0.0,
+                            quantity_precision: 0,
+                            price_precision: 0,
                         };
 
                         for filter in filters {
@@ -507,8 +600,8 @@ impl WsClient {
             .cloned()
     }
 
-    pub fn get_exchange_info(&self) -> HashMap<String, SymbolInfo> {
-        self.exchange_info.lock().unwrap().symbols.clone()
+    pub async fn get_exchange_info(&self) -> Result<ExchangeInfo, Box<dyn std::error::Error>> {
+        Ok(self.exchange_info.lock().unwrap().clone())
     }
 
     pub fn set_order_tracker(&mut self, order_tracker: OrderTracker) {

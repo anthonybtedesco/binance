@@ -1,5 +1,5 @@
 use eframe::egui;
-use log::{debug, info};
+use log::{debug, info, error};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub struct BinanceApp {
     market_filter: String,
     filtered_symbols: Vec<String>,
     last_refresh: std::time::Instant,
-    selected_symbols: HashMap<String, PriceData>,
+    selected_symbols: Vec<String>,
     trade_order: TradeOrder,
     order_tracker: OrderTracker,
 }
@@ -33,11 +33,11 @@ impl BinanceApp {
             market_filter: String::new(),
             filtered_symbols: Vec::new(),
             last_refresh: std::time::Instant::now(),
-            selected_symbols: HashMap::new(),
+            selected_symbols: Vec::new(),
             trade_order: TradeOrder {
                 symbol: String::new(),
-                side: OrderSide::Buy,
-                order_type: OrderType::Limit,
+                side: OrderSide::BUY,
+                order_type: OrderType::LIMIT,
                 quantity: 0.0,
                 price: None,
             },
@@ -65,114 +65,6 @@ impl BinanceApp {
         }
     }
 
-    fn show_trade_modal(&mut self, ui: &mut egui::Ui, symbol: &str, price_data: &PriceData, symbol_info: &SymbolInfo) {
-        egui::Window::new(format!("Trade {}", symbol))
-            .show(ui.ctx(), |ui| {
-                ui.horizontal(|ui| {
-                    ui.heading("Market Information");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("✕").clicked() {
-                            self.selected_symbols.remove(symbol);
-                        }
-                    });
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label(format!("Current Price: {:.8}", price_data.price));
-                    ui.label(format!("24h Range: {:.8} - {:.8}", price_data.low_24h, price_data.high_24h));
-                });
-
-                ui.separator();
-                ui.heading("Place Order");
-                
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.trade_order.side, OrderSide::Buy, "Buy");
-                    ui.selectable_value(&mut self.trade_order.side, OrderSide::Sell, "Sell");
-                });
-
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.trade_order.order_type, OrderType::Limit, "Limit");
-                    ui.selectable_value(&mut self.trade_order.order_type, OrderType::Market, "Market");
-                });
-
-                if let OrderType::Limit = self.trade_order.order_type {
-                    let mut price = self.trade_order.price.unwrap_or(price_data.price);
-                    if ui.add(egui::DragValue::new(&mut price)
-                        .speed(symbol_info.tick_size)
-                        .range(symbol_info.min_price..=symbol_info.max_price)
-                    ).changed() {
-                        self.trade_order.price = Some(price);
-                    }
-                }
-
-                let mut quantity = self.trade_order.quantity;
-                if ui.add(egui::DragValue::new(&mut quantity)
-                    .speed(symbol_info.step_size)
-                    .range(symbol_info.min_qty..=symbol_info.max_qty)
-                ).changed() {
-                    self.trade_order.quantity = quantity;
-                }
-
-                if ui.button("Place Order").clicked() {
-                    self.trade_order.symbol = symbol.to_string();
-                    let _ = futures::executor::block_on(self.trade_order.submit(self.order_tracker.clone()));
-                    self.selected_symbols.remove(symbol);
-                }
-            });
-    }
-
-    fn render_modals(&mut self, ui: &mut egui::Ui) {
-        if let Ok(client) = self.ws_client.lock() {
-            let exchange_info = client.get_exchange_info();
-            let selected_symbols = self.selected_symbols.clone();
-
-            for (symbol, price_data) in selected_symbols {
-                if let Some(symbol_info) = exchange_info.get(&symbol) {
-                    egui::Window::new(format!("Trade {}", symbol))
-                        .open(&mut self.selected_symbols.contains_key(&symbol))
-                        .show(ui.ctx(), |ui| {
-                            ui.separator();
-                            ui.heading("Place Order");
-                            
-                            ui.horizontal(|ui| {
-                                ui.selectable_value(&mut self.trade_order.side, OrderSide::Buy, "Buy");
-                                ui.selectable_value(&mut self.trade_order.side, OrderSide::Sell, "Sell");
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.selectable_value(&mut self.trade_order.order_type, OrderType::Limit, "Limit");
-                                ui.selectable_value(&mut self.trade_order.order_type, OrderType::Market, "Market");
-                            });
-
-                            if let OrderType::Limit = self.trade_order.order_type {
-                                let mut price = self.trade_order.price.unwrap_or(price_data.price);
-                                if ui.add(egui::DragValue::new(&mut price)
-                                    .speed(symbol_info.tick_size)
-                                    .range(symbol_info.min_price..=symbol_info.max_price)
-                                ).changed() {
-                                    self.trade_order.price = Some(price);
-                                }
-                            }
-
-                            let mut quantity = self.trade_order.quantity;
-                            if ui.add(egui::DragValue::new(&mut quantity)
-                                .speed(symbol_info.step_size)
-                                .range(symbol_info.min_qty..=symbol_info.max_qty)
-                            ).changed() {
-                                self.trade_order.quantity = quantity;
-                            }
-
-                            if ui.button("Place Order").clicked() {
-                                self.trade_order.symbol = symbol.to_string();
-                                let _ = futures::executor::block_on(self.trade_order.submit(self.order_tracker.clone()));
-                                self.selected_symbols.remove(&symbol);
-                            }
-                        });
-                }
-            }
-        }
-    }
-
     fn render_market_data(&mut self, ui: &mut egui::Ui) {
         ui.heading("Market Data");
         ui.horizontal(|ui| {
@@ -184,7 +76,9 @@ impl BinanceApp {
         });
 
         egui::ScrollArea::vertical()
-            .id_salt("market_scroll")
+            .auto_shrink([false; 2])
+            .stick_to_bottom(true)
+            .min_scrolled_height(500.0)
             .show(ui, |ui| {
                 tokio::task::block_in_place(|| {
                     if let Ok(client) = self.ws_client.lock() {
@@ -203,7 +97,7 @@ impl BinanceApp {
                                         ui.add(egui::Label::new(format!("Volume: {:.2}", price_data.volume)));
                                         clicked
                                     }).inner {
-                                        self.selected_symbols.insert(symbol.clone(), price_data.clone());
+                                        self.selected_symbols.push(symbol.clone());
                                     }
                                 }
                             }
@@ -218,9 +112,10 @@ impl BinanceApp {
         
         egui::ScrollArea::vertical()
             .id_salt("trades_scroll")
+            .min_scrolled_height(500.0)
             .show(ui, |ui| {
                 tokio::task::block_in_place(|| {
-                    if let Ok(orders) = self.order_tracker.try_lock() {
+                    if let Ok(orders) = self.order_tracker.lock() {
                         let mut sorted_orders: Vec<_> = orders.values().collect();
                         sorted_orders.sort_by(|a, b| b.last_update.cmp(&a.last_update));
 
@@ -228,13 +123,16 @@ impl BinanceApp {
                             ui.horizontal(|ui| {
                                 ui.label(format!("{}: ", order.symbol));
                                 let side_color = match order.side {
-                                    OrderSide::Buy => egui::Color32::GREEN,
-                                    OrderSide::Sell => egui::Color32::RED,
+                                    OrderSide::BUY => egui::Color32::GREEN,
+                                    OrderSide::SELL => egui::Color32::RED,
                                 };
                                 ui.colored_label(side_color, format!("{:?}", order.side));
                                 ui.label(format!("Price: {:.8}", order.price));
                                 ui.label(format!("Qty: {:.8}", order.quantity));
                                 ui.label(format!("Filled: {:.8}", order.filled));
+                                if let Some(exec_price) = order.last_executed_price {
+                                    ui.label(format!("@ {:.8}", exec_price));
+                                }
                                 let status_color = match order.status {
                                     OrderState::Filled => egui::Color32::GREEN,
                                     OrderState::PartiallyFilled => egui::Color32::YELLOW,
@@ -248,6 +146,314 @@ impl BinanceApp {
                     }
                 });
             });
+    }
+
+    fn render_portfolio_total(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Asset Balances");
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            if let Ok(client) = self.ws_client.lock() {
+                if let (Ok(balances), Ok(prices)) = (
+                    futures::executor::block_on(client.get_balances()),
+                    futures::executor::block_on(client.get_prices())
+                ) {
+                    // Collect balances once at the start
+                    let sorted_balances: Vec<_> = balances.into_iter()
+                        .filter(|(_, balance)| balance.free > 0.0 || balance.locked > 0.0)
+                        .collect();
+
+                    // Calculate totals first
+                    let total_usdt = sorted_balances.iter()
+                        .map(|(_, balance)| balance.total_in_usdt)
+                        .sum::<f64>();
+                    let total_btc = sorted_balances.iter()
+                        .map(|(_, balance)| balance.total_in_btc)
+                        .sum::<f64>();
+
+                    // Display individual balances
+                    for (asset, balance) in &sorted_balances {
+                        if asset != "USDT" {  // Don't show convert button for USDT
+                            ui.horizontal(|ui| {
+                                ui.label(format!("{}", asset));
+                                ui.button("Trade").on_hover_text(format!("Trade {}", asset)).clicked().then(|| {
+                                    self.selected_symbols.push(format!("{}USDT", asset));
+                                });
+                                if balance.free > 0.0 {
+                                    ui.label(format!("Free: {:.8}", balance.free));
+                                    
+                                    // Convert to USDT button
+                                    if ui.button("Convert to USDT")
+                                        .on_hover_text("Sell all available balance for USDT at market price")
+                                        .clicked() 
+                                    {
+                                        let symbol = format!("{}USDT", asset);
+                                        let mut order = TradeOrder {
+                                            symbol,
+                                            side: OrderSide::SELL,
+                                            order_type: OrderType::MARKET,
+                                            quantity: balance.free,
+                                            price: None,
+                                        };
+                                        
+                                        if let Err(e) = futures::executor::block_on(order.submit(self.order_tracker.clone())) {
+                                            error!("Failed to convert {} to USDT: {}", asset, e);
+                                        } else {
+                                            info!("Converting {} {} to USDT", balance.free, asset);
+                                        }
+                                    }
+
+                                    // Convert to BTC button
+                                    if asset != "BTC" && ui.button("Convert to BTC")
+                                        .on_hover_text("Sell all available balance for BTC at market price")
+                                        .clicked() 
+                                    {
+                                        let symbol = format!("{}BTC", asset);
+                                        let mut order = TradeOrder {
+                                            symbol,
+                                            side: OrderSide::SELL,
+                                            order_type: OrderType::MARKET,
+                                            quantity: balance.free,
+                                            price: None,
+                                        };
+                                        
+                                        if let Err(e) = futures::executor::block_on(order.submit(self.order_tracker.clone())) {
+                                            error!("Failed to convert {} to BTC: {}", asset, e);
+                                        } else {
+                                            info!("Converting {} {} to BTC", balance.free, asset);
+                                        }
+                                    }
+                                }
+                                if balance.locked > 0.0 {
+                                    ui.label(format!("Locked: {:.8}", balance.locked));
+                                }
+                                if balance.total_in_usdt > 0.0 {
+                                    ui.label(format!("≈ ${:.2}", balance.total_in_usdt));
+                                }
+                                if balance.total_in_btc > 0.0 {
+                                    ui.label(format!("≈ ₿{:.8}", balance.total_in_btc));
+                                }
+                            });
+                        }
+                    }
+
+                    // Portfolio summary section
+                    ui.separator();
+                    ui.heading("Portfolio Summary");
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(format!("Total USDT: ${:.2}", total_usdt));
+                            if ui.button("Convert All to USDT")
+                                .on_hover_text("Convert all non-USDT assets to USDT")
+                                .clicked() 
+                            {
+                                for (asset, balance) in &sorted_balances {
+                                    if asset != "USDT" && balance.free > 0.0 {
+                                        let symbol = format!("{}USDT", asset);
+                                        let mut order = TradeOrder {
+                                            symbol,
+                                            side: OrderSide::SELL,
+                                            order_type: OrderType::MARKET,
+                                            quantity: balance.free,
+                                            price: None,
+                                        };
+                                        if let Err(e) = futures::executor::block_on(order.submit(self.order_tracker.clone())) {
+                                            error!("Failed to convert {} to USDT: {}", asset, e);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        ui.vertical(|ui| {
+                            ui.label(format!("Total BTC: ₿{:.8}", total_btc));
+                            if ui.button("Convert All to BTC")
+                                .on_hover_text("Convert all non-BTC assets to BTC")
+                                .clicked() 
+                            {
+                                for (asset, balance) in &sorted_balances {
+                                    if asset != "BTC" && balance.free > 0.0 {
+                                        let symbol = format!("{}BTC", asset);
+                                        let mut order = TradeOrder {
+                                            symbol,
+                                            side: OrderSide::SELL,
+                                            order_type: OrderType::MARKET,
+                                            quantity: balance.free,
+                                            price: None,
+                                        };
+                                        if let Err(e) = futures::executor::block_on(order.submit(self.order_tracker.clone())) {
+                                            error!("Failed to convert {} to BTC: {}", asset, e);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+
+                    ui.separator();
+                    let total_value = if let Some(btc_price) = prices.get("BTCUSDT").and_then(|p| {
+                        // Check if price update is recent (within last minute)
+                        if p.last_update.timestamp() > chrono::Utc::now().timestamp() - 60 {
+                            Some(p.price)
+                        } else {
+                            None
+                        }
+                    }) {
+                        total_usdt + (total_btc * btc_price)
+                    } else {
+                        total_usdt // Fall back to just USDT total if BTC price is unavailable/stale
+                    };
+
+                    ui.heading(format!("Portfolio Total: ${:.2}", total_value));
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Total in USDT: ${:.2}", total_value));
+                        if let Some(btc_price) = prices.get("BTCUSDT").map(|p| p.price) {
+                            let total_value_btc = total_value / btc_price;
+                            ui.label(format!("Total in BTC: ₿{:.8}", total_value_btc));
+                        } else {
+                            ui.label(format!("Total in BTC: ₿{:.8}", total_btc));
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    fn render_trade_modals(&mut self, ctx: &egui::Context) {
+        // Make windows bigger
+        let modal_style = egui::Style {
+            spacing: egui::style::Spacing {
+                item_spacing: egui::vec2(10.0, 10.0),
+                button_padding: egui::vec2(10.0, 5.0),
+                ..Default::default()
+            },
+            text_styles: {
+                use egui::TextStyle::*;
+                let mut ts = std::collections::BTreeMap::new();
+                ts.insert(Body, egui::FontId::new(16.0, egui::FontFamily::Proportional));
+                ts.insert(Button, egui::FontId::new(16.0, egui::FontFamily::Proportional));
+                ts.insert(Heading, egui::FontId::new(22.0, egui::FontFamily::Proportional));
+                ts.insert(Small, egui::FontId::new(14.0, egui::FontFamily::Proportional));
+                ts
+            },
+            ..Default::default()
+        };
+
+        if let Ok(client) = self.ws_client.lock() {
+            if let (Ok(prices), Ok(exchange_info)) = (
+                futures::executor::block_on(client.get_prices()),
+                futures::executor::block_on(client.get_exchange_info())
+            ) {
+                let selected = self.selected_symbols.clone();
+                for symbol in selected {
+                    let mut is_open = true;
+                    if let (Some(price_data), Some(symbol_info)) = (prices.get(&symbol), exchange_info.symbols.get(&symbol)) {
+                        egui::Window::new(format!("Trade {}", symbol))
+                            .open(&mut is_open)
+                            .min_width(400.0)
+                            .show(ctx, |ui| {
+                                ui.heading("Market Information");
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("Current Price: {:.8}", price_data.price));
+                                    ui.label(format!("24h Range: {:.8} - {:.8}", price_data.low_24h, price_data.high_24h));
+                                });
+
+                                ui.separator();
+                                ui.heading("Place Order");
+                                
+                                ui.horizontal(|ui| {
+                                    if ui.selectable_value(&mut self.trade_order.side, OrderSide::BUY, "Buy").clicked() ||
+                                       ui.selectable_value(&mut self.trade_order.side, OrderSide::SELL, "Sell").clicked() {
+                                        // Update quantity based on price when side changes
+                                        if let Some(price) = self.trade_order.price {
+                                            self.trade_order.quantity = 100.0 / price; // Example: $100 worth
+                                        }
+                                    }
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.selectable_value(&mut self.trade_order.order_type, OrderType::LIMIT, "Limit");
+                                    ui.selectable_value(&mut self.trade_order.order_type, OrderType::MARKET, "Market");
+                                });
+
+                                if let OrderType::LIMIT = self.trade_order.order_type {
+                                    ui.horizontal(|ui| {
+                                        ui.label("Price:");
+                                        let mut price = self.trade_order.price.unwrap_or(price_data.price);
+                                        if ui.add(egui::DragValue::new(&mut price)
+                                            .speed(symbol_info.tick_size)
+                                            .prefix("$")
+                                            .range(symbol_info.min_price..=symbol_info.max_price)
+                                        ).changed() {
+                                            self.trade_order.price = Some(price);
+                                            // Update quantity when price changes
+                                            self.trade_order.quantity = 100.0 / price; // Example: $100 worth
+                                        }
+                                    });
+                                }
+
+                                ui.horizontal(|ui| {
+                                    ui.label("Quantity:");
+                                    let mut quantity = self.trade_order.quantity;
+                                    if ui.add(egui::DragValue::new(&mut quantity)
+                                        .speed(symbol_info.step_size)
+                                        .range(symbol_info.min_qty..=symbol_info.max_qty)
+                                    ).changed() {
+                                        self.trade_order.quantity = quantity;
+                                    }
+                                    
+                                    // Show value in USD
+                                    if let Some(price) = self.trade_order.price.or(Some(price_data.price)) {
+                                        ui.label(format!("≈ ${:.2}", quantity * price));
+                                    }
+                                });
+
+                                // Add percentage buttons
+                                ui.horizontal(|ui| {
+                                    for percentage in [25, 50, 75, 100] {
+                                        if ui.button(format!("{}%", percentage)).clicked() {
+                                            if let Some(price) = self.trade_order.price.or(Some(price_data.price)) {
+                                                let value = 100.0 * (percentage as f64 / 100.0);
+                                                self.trade_order.quantity = value / price;
+                                            }
+                                        }
+                                    }
+                                });
+
+                                if ui.button("Place Order").clicked() {
+                                    info!("Preparing to submit order for {}", symbol);
+                                    let mut order = TradeOrder {
+                                        symbol: symbol.clone(),
+                                        side: self.trade_order.side.clone(),
+                                        order_type: self.trade_order.order_type.clone(),
+                                        quantity: self.trade_order.quantity,
+                                        price: self.trade_order.price,
+                                    };
+                                    
+                                    // Ensure we have a price for limit orders
+                                    if let OrderType::LIMIT = order.order_type {
+                                        if order.price.is_none() {
+                                            order.price = Some(price_data.price);
+                                        }
+                                    }
+
+                                    info!("Order details: {:?}", order);
+                                    
+                                    // Submit the order
+                                    if let Err(e) = futures::executor::block_on(order.submit(self.order_tracker.clone())) {
+                                        error!("Failed to submit order: {}", e);
+                                    } else {
+                                        info!("Order submitted successfully");
+                                        self.selected_symbols.retain(|s| s != &symbol);
+                                    }
+                                }
+                            });
+
+                        if !is_open {
+                            self.selected_symbols.retain(|s| s != &symbol);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -290,12 +496,10 @@ impl eframe::App for BinanceApp {
             }
 
             let exchange_info = if let Ok(client) = self.ws_client.lock() {
-                client.get_exchange_info()
+                futures::executor::block_on(client.get_exchange_info()).unwrap_or_default().symbols
             } else {
                 HashMap::new()
             };
-
-            self.render_modals(ui);
 
             ui.horizontal(|ui| {
                 ui.label("API Endpoint:");
@@ -307,96 +511,51 @@ impl eframe::App for BinanceApp {
                 ui.add(egui::Label::new(&self.ws_endpoint));
             });
 
+            ui.label(format!("Selected Symbols: {}", self.selected_symbols.join(", ")));
+
             ui.separator();
 
-            // Asset balances section
-            ui.heading("Asset Balances");
-            egui::ScrollArea::vertical()
-                .id_salt("balances_scroll")
-                .show(ui, |ui| {
-                    tokio::task::block_in_place(|| {
-                        if let Ok(client) = self.ws_client.lock() {
-                            if let (Ok(balances), Ok(prices)) = (
-                                futures::executor::block_on(client.get_balances()),
-                                futures::executor::block_on(client.get_prices())
-                            ) {
-                                let mut sorted_assets: Vec<_> = balances.iter().collect();
-                                sorted_assets.sort_by(|a, b| a.0.cmp(b.0));
-                                
-                                // Initialize portfolio totals
-                                let mut portfolio_usdt = 0.0;
-                                let mut portfolio_btc = 0.0;
-                                let mut portfolio_usdc = 0.0;
+            self.render_portfolio_total(ui);
 
-                                for (asset, balance) in sorted_assets {
-                                    if balance.free > 0.0 || balance.locked > 0.0 {
-                                        ui.horizontal(|ui| {
-                                            ui.add(egui::Label::new(format!("{}: ", asset)));
-                                            ui.button("Trade").on_hover_text(format!("Trade {}", asset)).clicked().then(||{
-                                                if let Some(price_data) = prices.get(asset) {
-                                                    self.selected_symbols.insert(asset.clone(), price_data.clone());
-                                                }
-                                                else {
-                                                    self.selected_symbols.remove(asset);
-                                                }
-                                            });
-                                            ui.add(egui::Label::new(format!("Free: {:.8}", balance.free)));
-                                            if balance.locked > 0.0 {
-                                                ui.add(egui::Label::new(format!("Locked: {:.8}", balance.locked)));
-                                            }
-                                            if balance.total_in_usdt > 0.0 {
-                                                ui.add(egui::Label::new(format!("≈ ${:.2}", balance.total_in_usdt)));
-                                            }
-                                            if balance.total_in_btc > 0.0 {
-                                                ui.add(egui::Label::new(format!("≈ ₿{:.8}", balance.total_in_btc)));
-                                            }
-                                            if balance.total_in_usdc > 0.0 {
-                                                ui.add(egui::Label::new(format!("≈ USDC {:.2}", balance.total_in_usdc)));
-                                            }
-                                        });
-                                        
-                                        // Add to portfolio totals
-                                        portfolio_usdt += balance.total_in_usdt;
-                                        portfolio_btc += balance.total_in_btc;
-                                        portfolio_usdc += balance.total_in_usdc;
-                                    }
-                                }
-
-                                ui.separator();
-                                ui.heading("Portfolio Total");
-                                ui.horizontal(|ui| {
-                                    ui.label(format!("USDT: ${:.2}", portfolio_usdt));
-                                    ui.label(format!("BTC: ₿{:.8}", portfolio_btc));
-                                    ui.label(format!("USDC: {:.2}", portfolio_usdc));
-                                });
-                            }
-                        }
-                    });
-                });
+            ui.separator();
 
             // Market Data and Trades section
             ui.horizontal(|ui| {
                 // Left side - Market Data
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP).with_main_wrap(false), |ui| {
                     let market_panel = ui.available_width() / 2.0;
-                    ui.allocate_ui_with_layout(egui::vec2(market_panel, ui.available_height()), 
-                        egui::Layout::top_down_justified(egui::Align::LEFT), 
-                        |ui| {
-                            // Market data content...
-                            self.render_market_data(ui);
-                        }
-                    );
+                    let available_height = ui.available_height();
+
+                    // Market data panel
+                    ui.vertical(|ui| {
+                        ui.set_min_height(available_height);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(market_panel, available_height), 
+                            egui::Layout::top_down_justified(egui::Align::LEFT), 
+                            |ui| {
+                                self.render_market_data(ui);
+                            }
+                        );
+                    });
 
                     ui.separator();
 
                     // Right side - Trades
-                    ui.allocate_ui_with_layout(egui::vec2(market_panel, ui.available_height()),
-                        egui::Layout::top_down_justified(egui::Align::LEFT),
-                        |ui| self.render_trades_view(ui)
-                    );
+                    ui.vertical(|ui| {
+                        ui.set_min_height(available_height);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(market_panel, available_height),
+                            egui::Layout::top_down_justified(egui::Align::LEFT),
+                            |ui| {
+                                self.render_trades_view(ui)
+                            }
+                        );
+                    });
                 });
             });
         });
+
+        self.render_trade_modals(ctx);
         
         ctx.request_repaint();
     }
